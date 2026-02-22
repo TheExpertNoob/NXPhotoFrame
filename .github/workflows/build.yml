@@ -1,0 +1,65 @@
+name: Build PhotoFrame NRO
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install portlibs
+        run: |
+          dkp-pacman -Sy --noconfirm \
+            switch-sdl2 \
+            switch-sdl2_image \
+            switch-sdl2_ttf \
+            switch-curl \
+            switch-mbedtls \
+            switch-libjpeg-turbo \
+            switch-libpng \
+            switch-libwebp \
+            switch-freetype \
+            switch-harfbuzz \
+            switch-portlibs \
+            switch-bzip2 \
+            switch-zlib
+
+      - name: Build
+        run: make
+        
+      - name: Generate NSO and NPDM
+        run: |
+          # ELF is built by make, convert to NSO
+          mkdir -p output
+          /opt/devkitpro/tools/bin/elf2nso \
+            photoframe.elf \
+            output/main
+      
+          # Generate NPDM using npdmtool
+          /opt/devkitpro/tools/bin/npdmtool \
+            npdm.json \
+            output/main.npdm
+      
+      - name: Upload NSP components
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsp-components
+          path: |
+            output/main
+            output/main.npdm
+            romfs/
+            icon.jpg
+
+      - name: Upload NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: photoframe
+          path: photoframe.nro
