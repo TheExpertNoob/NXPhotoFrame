@@ -137,9 +137,11 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
     SDL_Rect bar = {0, SCREEN_H - 100, SCREEN_W, 100};
     SDL_RenderFillRect(renderer, &bar);
 
-    // Draw arrows and name
     int row1_y = SCREEN_H - 95;
-    render_text(renderer, font, "[<] [>] Category:", white, 20, row1_y);
+    char cat_line[128];
+    snprintf(cat_line, sizeof(cat_line), "[<] [>]  Category:  [ %s ]  (%d/%d)",
+             CATEGORIES[cat_index].name, cat_index + 1, NUM_CATEGORIES);
+    render_text(renderer, font, cat_line, cyan, 20, row1_y);
 
     // Highlight selected category, show all with arrows indicating current
     int x = 290;
@@ -186,7 +188,7 @@ int main(int argc, char *argv[]) {
     psmExit();
 
     if (charger != PsmChargerType_Unconnected) {
-        appletSetAutoSleepDisabled(true);
+        appletOverrideAutoSleepTimeAndDimmingTime(0, 0, 0, 0);
     }
 	
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
@@ -329,7 +331,7 @@ cleanup:
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
-	appletSetAutoSleepDisabled(false);
+	appletOverrideAutoSleepTimeAndDimmingTime(-1, -1, -1, -1);
 	appletExit();
     socketExit();
     romfsExit();
