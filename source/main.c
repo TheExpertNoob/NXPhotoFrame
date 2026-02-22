@@ -159,6 +159,8 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 int main(int argc, char *argv[]) {
     romfsInit();
     socketInitializeDefault();
+    appletInitialize();
+    appletSetMediaPlaybackState(true);
 	
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
     IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
@@ -300,6 +302,8 @@ cleanup:
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
+    appletSetMediaPlaybackState(false);
+    appletExit();
     socketExit();
     romfsExit();
     return 0;
