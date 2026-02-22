@@ -159,17 +159,6 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 int main(int argc, char *argv[]) {
     romfsInit();
     socketInitializeDefault();
-	appletInitialize();
-	
-	// Check if docked or charging before disabling sleep
-    psmInitialize();
-    PsmChargerType charger = PsmChargerType_Unconnected;
-    psmGetChargerType(&charger);
-    psmExit();
-
-    if (charger != PsmChargerType_Unconnected) {
-        appletOverrideAutoSleepTimeAndDimmingTime(0, 0, 0, 0);
-    }
 	
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
     IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
@@ -311,8 +300,6 @@ cleanup:
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
-	appletOverrideAutoSleepTimeAndDimmingTime(-1, -1, -1, -1);
-	appletExit();
     socketExit();
     romfsExit();
     return 0;

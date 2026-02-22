@@ -66,4 +66,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NXPhotoFrame-nro
-          path: switch
+          path: |
+            switch/NXPhotoFrame.nro
