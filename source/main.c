@@ -177,6 +177,7 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 int main(int argc, char *argv[]) {
     romfsInit();
     socketInitializeDefault();
+	appletInitialize();
 	
 	// Check if docked or charging before disabling sleep
     psmInitialize();
@@ -329,6 +330,7 @@ cleanup:
     IMG_Quit();
     SDL_Quit();
 	appletSetAutoSleepDisabled(false);
+	appletExit();
     socketExit();
     romfsExit();
     return 0;

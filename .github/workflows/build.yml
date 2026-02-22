@@ -38,28 +38,32 @@ jobs:
       - name: Generate NSO and NPDM
         run: |
           # ELF is built by make, convert to NSO
-          mkdir -p output
+          mkdir -p exefs
           /opt/devkitpro/tools/bin/elf2nso \
             photoframe.elf \
-            output/main
+            exefs/main
       
           # Generate NPDM using npdmtool
           /opt/devkitpro/tools/bin/npdmtool \
             npdm.json \
-            output/main.npdm
+            exefs/main.npdm
       
       - name: Upload NSP components
         uses: actions/upload-artifact@v4
         with:
           name: nsp-components
           path: |
-            output/main
-            output/main.npdm
+            exefs/main
+            exefs/main.npdm
             romfs/
-            icon.jpg
 
+      - name: Prepare NRO
+        run: |
+          mkdir -p switch
+          cp photoframe.nro switch/NXPhotoFrame.nro
+      
       - name: Upload NRO
         uses: actions/upload-artifact@v4
         with:
-          name: photoframe
-          path: photoframe.nro
+          name: nro-photoframe
+          path: switch/
