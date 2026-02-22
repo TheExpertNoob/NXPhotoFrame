@@ -69,7 +69,7 @@ SDL_Texture* fetch_image(SDL_Renderer *renderer, const char *url, char *status_o
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXPhotoFrame/" APP_VERSION " (Nintendo Switch)");
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXPhotoFrame/1.0 (Nintendo Switch)");
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
