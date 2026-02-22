@@ -137,32 +137,12 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
     SDL_Rect bar = {0, SCREEN_H - 100, SCREEN_W, 100};
     SDL_RenderFillRect(renderer, &bar);
 
+// Row 1: category selector
     int row1_y = SCREEN_H - 95;
     char cat_line[128];
     snprintf(cat_line, sizeof(cat_line), "[<] [>]  Category:  [ %s ]  (%d/%d)",
              CATEGORIES[cat_index].name, cat_index + 1, NUM_CATEGORIES);
     render_text(renderer, font, cat_line, cyan, 20, row1_y);
-
-    // Highlight selected category, show all with arrows indicating current
-    int x = 290;
-    for (int i = 0; i < NUM_CATEGORIES; i++) {
-        SDL_Color col = (i == cat_index) ? cyan : white;
-        // Draw bracket around selected
-        if (i == cat_index) {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "[ %s ]", CATEGORIES[i].name);
-            render_text(renderer, font, buf, col, x, row1_y);
-            int w, h;
-            TTF_SizeText(font, buf, &w, &h);
-            x += w + 12;
-        } else {
-            render_text(renderer, font, CATEGORIES[i].name, col, x, row1_y);
-            int w, h;
-            TTF_SizeText(font, CATEGORIES[i].name, &w, &h);
-            x += w + 12;
-        }
-        if (x > SCREEN_W - 20) break; // safety
-    }
 
     // Row 2: interval + fetch status
     char line2[256];
