@@ -170,6 +170,8 @@ int main(int argc, char *argv[]) {
         appletSetMediaPlaybackState(true);
     }
 	
+	char fetch_status[256] = "Waiting...";
+	
 	// Check for internet connection at start.
     NifmInternetConnectionStatus netStatus = NifmInternetConnectionStatus_ConnectingUnknown1;
     nifmInitialize(NifmServiceType_User);
@@ -199,7 +201,6 @@ int main(int argc, char *argv[]) {
     Uint32 ui_show_time = SDL_GetTicks();
     Uint32 last_fetch   = SDL_GetTicks() - (interval_mins * 60 * 1000);
     SDL_Texture *current_image = NULL;
-    char fetch_status[256] = "Waiting...";
 
     while (1) {
         Uint32 now = SDL_GetTicks();
