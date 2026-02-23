@@ -19,6 +19,14 @@
 #define BTN_DLEFT   12
 #define BTN_DRIGHT  14
 
+// At the top of your file, define them for readability
+#define ICON_DLEFT  "\xee\x80\x80"   // U+E000
+#define ICON_DRIGHT "\xee\x80\x81"   // U+E001
+#define ICON_PLUS   "\xee\x80\x82"   // U+E002
+#define ICON_MINUS  "\xee\x80\x83"   // U+E003
+#define ICON_A      "\xee\x80\x84"   // U+E004
+#define ICON_B      "\xee\x80\x85"   // U+E005
+
 typedef struct {
     const char *name;
     const char *url;
@@ -140,15 +148,15 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
     // Row 1: category selector
     int row1_y = SCREEN_H - 95;
     char cat_line[128];
-    snprintf(cat_line, sizeof(cat_line), "[<] [>]  Category:  [ %s ]  (%d/%d)",
-             CATEGORIES[cat_index].name, cat_index + 1, NUM_CATEGORIES);
+    snprintf(cat_line, sizeof(cat_line), "%s %s  Category:  [ %s ]  (%d/%d)",
+             ICON_DLEFT, ICON_DRIGHT, CATEGORIES[cat_index].name, cat_index + 1, NUM_CATEGORIES);
     render_text(renderer, font, cat_line, cyan, 20, row1_y);
 
     // Row 2: interval + fetch status
     char line2[256];
     snprintf(line2, sizeof(line2),
-             "Interval: %d min(s)   [+] Increase  [-] Decrease  [B] Exit",
-             interval_mins);
+             "Interval: %d min(s)   %s Increase  %s Decrease  %s Exit",
+             interval_mins, ICON_PLUS, ICON_MINUS, ICON_B);
     render_text(renderer, font, line2, white, 20, SCREEN_H - 62);
 
     char line3[256];
@@ -285,12 +293,12 @@ int main(int argc, char *argv[]) {
                         case BTN_B:
                             goto cleanup;
                         case BTN_PLUS:
-                            interval_mins++;
+                            if (interval_mins < 1440) interval_mins++;
                             ui_visible = 1;
                             ui_show_time = SDL_GetTicks();
                             break;
                         case BTN_MINUS:
-                            if (interval_mins > 1) interval_mins--;
+                            if (interval_mins > 5) interval_mins--;
                             ui_visible = 1;
                             ui_show_time = SDL_GetTicks();
                             break;
