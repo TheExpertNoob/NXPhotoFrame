@@ -124,7 +124,7 @@ SDL_Texture* fetch_image(SDL_Renderer *renderer, const char *url, char *status_o
 }
 
 void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_Color color, int x, int y) {
-    SDL_Surface *s = TTF_RenderText_Blended(font, text, color);
+    SDL_Surface *s = TTF_RenderUTF8_Blended(font, text, color);
     if (!s) return;
     SDL_Texture *t = SDL_CreateTextureFromSurface(renderer, s);
     SDL_Rect dst = {x, y, s->w, s->h};
@@ -230,7 +230,7 @@ int main(int argc, char *argv[]) {
                 if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
                 if (font) {
                     SDL_Color white = {255,255,255,255};
-                    SDL_Surface *ls = TTF_RenderText_Blended(font, "Loading...", white);
+                    SDL_Surface *ls = TTF_RenderUTF8_Blended(font, "Loading...", white);
                     if (ls) {
                         SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
                         SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
             SDL_RenderCopy(renderer, current_image, NULL, NULL);
         } else if (font) {
             SDL_Color white = {255,255,255,255};
-            SDL_Surface *s = TTF_RenderText_Blended(font, fetch_status, white);
+            SDL_Surface *s = TTF_RenderUTF8_Blended(font, fetch_status, white);
             if (s) {
                 SDL_Texture *t = SDL_CreateTextureFromSurface(renderer, s);
                 SDL_Rect dst = {(SCREEN_W-s->w)/2, (SCREEN_H-s->h)/2, s->w, s->h};
