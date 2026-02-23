@@ -171,11 +171,11 @@ int main(int argc, char *argv[]) {
     }
 	
 	// Check for internet connection at start.
-	NifmInternetConnectionStatus netStatus;
-    nifmInitialize(NifmClientType_User);
-    nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+    NifmInternetConnectionStatus netStatus = NifmInternetConnectionStatus_ConnectingUnknown1;
+    nifmInitialize(NifmServiceType_User);
+    Result rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
     nifmExit();
-    if (netStatus != NifmInternetConnectionStatus_Connected) {
+    if (R_FAILED(rc) || netStatus != NifmInternetConnectionStatus_Connected) {
         snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
     }
 	
@@ -210,11 +210,11 @@ int main(int argc, char *argv[]) {
         // Fetch when timer expires
         if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
             // Re-check network before fetching
-            nifmInitialize(NifmClientType_User);
-            nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+            nifmInitialize(NifmServiceType_User);
+            rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
             nifmExit();
-        
-            if (netStatus == NifmInternetConnectionStatus_Connected) {
+
+            if (R_SUCCEEDED(rc) && netStatus == NifmInternetConnectionStatus_Connected) {
                 // Show loading overlay
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);
@@ -231,7 +231,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 SDL_RenderPresent(renderer);
-        
+
                 SDL_Texture *new_image = fetch_image(renderer,
                     CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
                 if (new_image) {
