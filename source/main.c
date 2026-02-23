@@ -160,7 +160,15 @@ int main(int argc, char *argv[]) {
     romfsInit();
     socketInitializeDefault();
     appletInitialize();
-    appletSetMediaPlaybackState(true);
+	
+    psmInitialize();
+    PsmChargerType charger = PsmChargerType_Unconnected;
+    psmGetChargerType(&charger);
+    psmExit();
+	
+    if (charger != PsmChargerType_Unconnected) {
+        appletSetMediaPlaybackState(true);
+    }
 	
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
     IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
