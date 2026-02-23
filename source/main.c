@@ -137,7 +137,7 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
     SDL_Rect bar = {0, SCREEN_H - 100, SCREEN_W, 100};
     SDL_RenderFillRect(renderer, &bar);
 
-// Row 1: category selector
+    // Row 1: category selector
     int row1_y = SCREEN_H - 95;
     char cat_line[128];
     snprintf(cat_line, sizeof(cat_line), "[<] [>]  Category:  [ %s ]  (%d/%d)",
@@ -161,13 +161,22 @@ int main(int argc, char *argv[]) {
     socketInitializeDefault();
     appletInitialize();
 	
+	// Check if switch is docked or charging then disable screen dimming/sleep.
     psmInitialize();
     PsmChargerType charger = PsmChargerType_Unconnected;
     psmGetChargerType(&charger);
     psmExit();
-	
     if (charger != PsmChargerType_Unconnected) {
         appletSetMediaPlaybackState(true);
+    }
+	
+	// Check for internet connection at start.
+	NifmInternetConnectionStatus netStatus;
+    nifmInitialize(NifmClientType_User);
+    nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+    nifmExit();
+    if (netStatus != NifmInternetConnectionStatus_Connected) {
+        snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
     }
 	
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
@@ -200,28 +209,37 @@ int main(int argc, char *argv[]) {
 
         // Fetch when timer expires
         if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
-            // Show loading overlay
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
-            if (font) {
-                SDL_Color white = {255,255,255,255};
-                SDL_Surface *ls = TTF_RenderText_Blended(font, "Loading...", white);
-                if (ls) {
-                    SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
-                    SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
-                    SDL_RenderCopy(renderer, lt, NULL, &dst);
-                    SDL_DestroyTexture(lt);
-                    SDL_FreeSurface(ls);
+            // Re-check network before fetching
+            nifmInitialize(NifmClientType_User);
+            nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+            nifmExit();
+        
+            if (netStatus == NifmInternetConnectionStatus_Connected) {
+                // Show loading overlay
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
+                if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
+                if (font) {
+                    SDL_Color white = {255,255,255,255};
+                    SDL_Surface *ls = TTF_RenderText_Blended(font, "Loading...", white);
+                    if (ls) {
+                        SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
+                        SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
+                        SDL_RenderCopy(renderer, lt, NULL, &dst);
+                        SDL_DestroyTexture(lt);
+                        SDL_FreeSurface(ls);
+                    }
                 }
-            }
-            SDL_RenderPresent(renderer);
-
-            SDL_Texture *new_image = fetch_image(renderer,
-                CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
-            if (new_image) {
-                if (current_image) SDL_DestroyTexture(current_image);
-                current_image = new_image;
+                SDL_RenderPresent(renderer);
+        
+                SDL_Texture *new_image = fetch_image(renderer,
+                    CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
+                if (new_image) {
+                    if (current_image) SDL_DestroyTexture(current_image);
+                    current_image = new_image;
+                }
+            } else {
+                snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
             }
             last_fetch = SDL_GetTicks();
             ui_visible = 1;
