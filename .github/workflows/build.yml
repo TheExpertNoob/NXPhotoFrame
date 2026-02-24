@@ -56,6 +56,10 @@ jobs:
             exefs/main
             exefs/main.npdm
             romfs/
+            logo/NintendoLogo.png
+            logo/StartupMovie.gif
+            icon1024.jpg
+            photoframe.nsxml
 
       - name: Prepare NRO
         run: |
