@@ -148,14 +148,14 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
     // Row 1: category selector
     int row1_y = SCREEN_H - 95;
     char cat_line[128];
-    snprintf(cat_line, sizeof(cat_line), "%s %s  Category:  [ %s ]  (%d/%d)",
+    snprintf(cat_line, sizeof(cat_line), "%s %s  Category: [%s]  (%d/%d)",
              ICON_DLEFT, ICON_DRIGHT, CATEGORIES[cat_index].name, cat_index + 1, NUM_CATEGORIES);
     render_text(renderer, font, cat_line, cyan, 20, row1_y);
 
     // Row 2: interval + fetch status
     char line2[256];
     snprintf(line2, sizeof(line2),
-             "Interval: %d min(s)   %s Increase  %s Decrease  %s Exit",
+             "Interval: %d min(s)     %s Increase     %s Decrease     %s Exit",
              interval_mins, ICON_PLUS, ICON_MINUS, ICON_B);
     render_text(renderer, font, line2, white, 20, SCREEN_H - 62);
 
@@ -169,12 +169,14 @@ int main(int argc, char *argv[]) {
     socketInitializeDefault();
     appletInitialize();
 	
-	// Check if switch is docked or charging then disable screen dimming/sleep.
+	Uint32 last_charger_check = 0;
+    PsmChargerType last_charger = PsmChargerType_Unconnected;
+	
+    // Initial charger state
     psmInitialize();
-    PsmChargerType charger = PsmChargerType_Unconnected;
-    psmGetChargerType(&charger);
+    psmGetChargerType(&last_charger);
     psmExit();
-    if (charger != PsmChargerType_Unconnected) {
+    if (last_charger != PsmChargerType_Unconnected) {
         appletSetMediaPlaybackState(true);
     }
 	
@@ -205,6 +207,7 @@ int main(int argc, char *argv[]) {
 
     int interval_mins = DEFAULT_INTERVAL_MINS;
     int cat_index     = 0;
+	int pending_fetch = 0;
     int ui_visible    = 1;
     Uint32 ui_show_time = SDL_GetTicks();
     Uint32 last_fetch   = SDL_GetTicks() - (interval_mins * 60 * 1000);
@@ -255,6 +258,19 @@ int main(int argc, char *argv[]) {
             ui_show_time = SDL_GetTicks();
         }
 
+        // Re-check charger state every 30 seconds
+        if (now - last_charger_check >= 30000) {
+            last_charger_check = now;
+            PsmChargerType current_charger = PsmChargerType_Unconnected;
+            psmInitialize();
+            psmGetChargerType(&current_charger);
+            psmExit();
+            if (current_charger != last_charger) {
+                last_charger = current_charger;
+                appletSetMediaPlaybackState(current_charger != PsmChargerType_Unconnected);
+            }
+        }
+
         // Render
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
@@ -274,6 +290,14 @@ int main(int argc, char *argv[]) {
         if (ui_visible && font)
             render_ui(renderer, font, interval_mins, cat_index, fetch_status);
         SDL_RenderPresent(renderer);
+
+        if (ui_visible && (now - ui_show_time > UI_HIDE_DELAY_MS)) {
+            ui_visible = 0;
+            if (pending_fetch) {
+                pending_fetch = 0;
+                last_fetch = now - (interval_mins * 60 * 1000); // trigger immediate fetch
+            }
+        }
 
         // Events
         SDL_Event event;
@@ -305,13 +329,13 @@ int main(int argc, char *argv[]) {
                         case BTN_DLEFT:
                             cat_index = (cat_index - 1 + NUM_CATEGORIES) % NUM_CATEGORIES;
                             // Force immediate fetch of new category
-                            last_fetch = SDL_GetTicks() - (interval_mins * 60 * 1000);
+                            pending_fetch = 1;
                             ui_visible = 1;
                             ui_show_time = SDL_GetTicks();
                             break;
                         case BTN_DRIGHT:
                             cat_index = (cat_index + 1) % NUM_CATEGORIES;
-                            last_fetch = SDL_GetTicks() - (interval_mins * 60 * 1000);
+                            pending_fetch = 1;
                             ui_visible = 1;
                             ui_show_time = SDL_GetTicks();
                             break;
