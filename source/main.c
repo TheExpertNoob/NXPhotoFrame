@@ -216,9 +216,6 @@ int main(int argc, char *argv[]) {
     while (1) {
         Uint32 now = SDL_GetTicks();
 
-        if (ui_visible && (now - ui_show_time > UI_HIDE_DELAY_MS))
-            ui_visible = 0;
-
         // Fetch when timer expires
         if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
             // Re-check network before fetching
