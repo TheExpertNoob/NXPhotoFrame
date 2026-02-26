@@ -1,6 +1,8 @@
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <switch.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -29,19 +31,21 @@
 
 typedef struct {
     const char *name;
-    const char *url;
+    const char *url;       // NULL if local
+    const char *localpath; // NULL if remote
 } Category;
 
 static const Category CATEGORIES[] = {
-    { "Video Games",    "https://gandalfsax.com/images/vg.jpg"    },
-	{ "Halloween",      "https://gandalfsax.com/images/hw.jpg"    },
-    { "Ancient Girls",  "https://gandalfsax.com/images/ag.jpg"    },
-    { "Gaming Girls",   "https://gandalfsax.com/images/gg.jpg"    },
-    { "Lofi Time",      "https://gandalfsax.com/images/lt.jpg"    },
-    { "Waifu & Chill",  "https://gandalfsax.com/images/wac.jpg"   },
-	{ "All Girls",      "https://gandalfsax.com/images/girls.jpg" },
+    { "Album",          NULL, "sdmc:/Nintendo/Album/"             },
+	{ "Video Games",    "https://gandalfsax.com/images/vg.jpg", NULL    },
+	{ "Halloween",      "https://gandalfsax.com/images/hw.jpg", NULL    },
+    { "Ancient Girls",  "https://gandalfsax.com/images/ag.jpg", NULL    },
+    { "Gaming Girls",   "https://gandalfsax.com/images/gg.jpg", NULL    },
+    { "Lofi Time",      "https://gandalfsax.com/images/lt.jpg", NULL    },
+    { "Waifu & Chill",  "https://gandalfsax.com/images/wac.jpg", NULL   },
+	{ "All Girls",      "https://gandalfsax.com/images/girls.jpg", NULL },
 };
-#define NUM_CATEGORIES 7
+#define NUM_CATEGORIES 8
 
 typedef struct {
     unsigned char *data;
@@ -123,6 +127,76 @@ SDL_Texture* fetch_image(SDL_Renderer *renderer, const char *url, char *status_o
     return texture;
 }
 
+SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
+                               char *status_out, size_t status_len) {
+    DIR *dir = opendir(folderpath);
+    if (!dir) {
+        snprintf(status_out, status_len, "Folder not found: %s", folderpath);
+        return NULL;
+    }
+
+    // Count valid image files first
+    struct dirent *entry;
+    int count = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *ext = strrchr(entry->d_name, '.');
+        if (ext && (
+            strcasecmp(ext, ".jpg") == 0 ||
+            strcasecmp(ext, ".jpeg") == 0 ||
+            strcasecmp(ext, ".png") == 0)) {
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        closedir(dir);
+        snprintf(status_out, status_len, "No images found in %s", folderpath);
+        return NULL;
+    }
+
+    // Pick a random one
+    int target = rand() % count;
+    rewinddir(dir);
+    int current = 0;
+    char filepath[512] = {0};
+    while ((entry = readdir(dir)) != NULL) {
+        const char *ext = strrchr(entry->d_name, '.');
+        if (ext && (
+            strcasecmp(ext, ".jpg") == 0 ||
+            strcasecmp(ext, ".jpeg") == 0 ||
+            strcasecmp(ext, ".png") == 0)) {
+            if (current == target) {
+                snprintf(filepath, sizeof(filepath), "%s%s", folderpath, entry->d_name);
+                break;
+            }
+            current++;
+        }
+    }
+    closedir(dir);
+
+    if (filepath[0] == 0) {
+        snprintf(status_out, status_len, "Failed to select image.");
+        return NULL;
+    }
+
+    SDL_Surface *surface = IMG_Load(filepath);
+    if (!surface) {
+        snprintf(status_out, status_len, "IMG_Load failed: %s", IMG_GetError());
+        return NULL;
+    }
+
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+
+    if (!texture) {
+        snprintf(status_out, status_len, "CreateTexture failed");
+        return NULL;
+    }
+
+    snprintf(status_out, status_len, "Local: %s", entry->d_name);
+    return texture;
+}
+
 void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_Color color, int x, int y) {
     SDL_Surface *s = TTF_RenderUTF8_Blended(font, text, color);
     if (!s) return;
@@ -166,6 +240,7 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 
 int main(int argc, char *argv[]) {
     romfsInit();
+	fsdevMountSdmc();
     socketInitializeDefault();
     appletInitialize();
 	
@@ -218,37 +293,46 @@ int main(int argc, char *argv[]) {
 
         // Fetch when timer expires
         if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
-            // Re-check network before fetching
-            nifmInitialize(NifmServiceType_User);
-            rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
-            nifmExit();
+            SDL_Texture *new_image = NULL;
 
-            if (R_SUCCEEDED(rc) && netStatus == NifmInternetConnectionStatus_Connected) {
-                // Show loading overlay
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderClear(renderer);
-                if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
-                if (font) {
-                    SDL_Color white = {255,255,255,255};
-                    SDL_Surface *ls = TTF_RenderUTF8_Blended(font, "Loading...", white);
-                    if (ls) {
-                        SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
-                        SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
-                        SDL_RenderCopy(renderer, lt, NULL, &dst);
-                        SDL_DestroyTexture(lt);
-                        SDL_FreeSurface(ls);
+            if (CATEGORIES[cat_index].url != NULL) {
+                // Remote fetch — check network first
+                nifmInitialize(NifmServiceType_User);
+                rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+                nifmExit();
+
+                if (R_SUCCEEDED(rc) && netStatus == NifmInternetConnectionStatus_Connected) {
+                    // Show loading overlay
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                    SDL_RenderClear(renderer);
+                    if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
+                    if (font) {
+                        SDL_Color white = {255,255,255,255};
+                        SDL_Surface *ls = TTF_RenderUTF8_Blended(font, "Loading...", white);
+                        if (ls) {
+                            SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
+                            SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
+                            SDL_RenderCopy(renderer, lt, NULL, &dst);
+                            SDL_DestroyTexture(lt);
+                            SDL_FreeSurface(ls);
+                        }
                     }
+                    SDL_RenderPresent(renderer);
+                    new_image = fetch_image(renderer,
+                        CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
+                } else {
+                    snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
                 }
-                SDL_RenderPresent(renderer);
 
-                SDL_Texture *new_image = fetch_image(renderer,
-                    CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
-                if (new_image) {
-                    if (current_image) SDL_DestroyTexture(current_image);
-                    current_image = new_image;
-                }
-            } else {
-                snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
+            } else if (CATEGORIES[cat_index].localpath != NULL) {
+                // Local fetch — no network check needed
+                new_image = load_local_image(renderer,
+                    CATEGORIES[cat_index].localpath, fetch_status, sizeof(fetch_status));
+            }
+
+            if (new_image) {
+                if (current_image) SDL_DestroyTexture(current_image);
+                current_image = new_image;
             }
             last_fetch = SDL_GetTicks();
             ui_visible = 1;
@@ -361,6 +445,7 @@ cleanup:
     appletSetMediaPlaybackState(false);
     appletExit();
     socketExit();
+	fsdevUnmountDevice("sdmc");
     romfsExit();
     return 0;
 }
