@@ -277,6 +277,7 @@ SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
     int target = rand() % count;
     char chosen[512];
     strncpy(chosen, imagelist[target], sizeof(chosen) - 1);
+	chosen[sizeof(chosen) - 1] = 0;
 
     // Free the list
     for (int i = 0; i < count; i++) free(imagelist[i]);
@@ -284,8 +285,41 @@ SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
 
     SDL_Surface *surface = IMG_Load(chosen);
     if (!surface) {
-        snprintf(status_out, status_len, "IMG_Load failed: %s", IMG_GetError());
-        return NULL;
+    snprintf(status_out, status_len, "IMG_Load failed: %s", IMG_GetError());
+    return NULL;
+    }
+    
+    // Scale to fit 1280x720 preserving aspect ratio (letterbox/pillarbox)
+    if (surface->w != SCREEN_W || surface->h != SCREEN_H) {
+        float src_ratio = (float)surface->w / (float)surface->h;
+        float dst_ratio = (float)SCREEN_W / (float)SCREEN_H;
+    
+        int new_w, new_h;
+        if (src_ratio > dst_ratio) {
+            // Wider than 16:9 — fit width, letterbox top/bottom
+            new_w = SCREEN_W;
+            new_h = (int)(SCREEN_W / src_ratio);
+        } else {
+            // Taller than 16:9 — fit height, pillarbox left/right
+            new_h = SCREEN_H;
+            new_w = (int)(SCREEN_H * src_ratio);
+        }
+    
+        // Create black canvas at full screen size
+        SDL_Surface *canvas = SDL_CreateRGBSurface(0, SCREEN_W, SCREEN_H, 32,
+            0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+        SDL_FillRect(canvas, NULL, SDL_MapRGB(canvas->format, 0, 0, 0));
+    
+        // Center the scaled image on the canvas
+        SDL_Rect dst_rect = {
+            (SCREEN_W - new_w) / 2,
+            (SCREEN_H - new_h) / 2,
+            new_w,
+            new_h
+        };
+        SDL_BlitScaled(surface, NULL, canvas, &dst_rect);
+        SDL_FreeSurface(surface);
+        surface = canvas;
     }
 
     SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
