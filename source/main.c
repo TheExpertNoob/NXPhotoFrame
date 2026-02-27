@@ -54,7 +54,18 @@ void write_default_config(void) {
     FILE *f = fopen(CONFIG_PATH, "w");
     if (!f) return;
 
-    fprintf(f, "[Categories]\n");
+    fprintf(f, "[Settings]\n");
+    fprintf(f, "first_run = true\n");
+    fprintf(f, "\n");
+	fprintf(f, "; Remote categories use a web URL from my random image generator\n");
+	fprintf(f, "; hosted on gandalfsax.com. You can host your own too!\n");
+	fprintf(f, "; https://github.com/TheExpertNoob/randomImage\n");
+	fprintf(f, "\n");
+    fprintf(f, "; Local categories may be any folder on your SD card containing\n");
+	fprintf(f, "; JPGs and/or PNGs. Searches subdirectories too!\n");
+	fprintf(f, "\n");
+    fprintf(f, "; Add or remove categories freely in this file\n");
+	fprintf(f, "[Categories]\n");
 	fprintf(f, "Album = local://sdmc:/Nintendo/Album/\n");
 	fprintf(f, "Video Games = https://gandalfsax.com/images/vg.jpg\n");
 	fprintf(f, "Halloween = https://gandalfsax.com/images/hw.jpg\n");
@@ -65,6 +76,8 @@ void write_default_config(void) {
 	fprintf(f, "All Girls = https://gandalfsax.com/images/girls.jpg\n");
     fclose(f);
 }
+
+bool is_first_run = false;
 
 void load_config(void) {
     // If config doesn't exist, write defaults first
@@ -78,6 +91,7 @@ void load_config(void) {
     NUM_CATEGORIES = 0;
     char line[320];
     int in_categories = 0;
+	int in_settings = 0;
 
     while (fgets(line, sizeof(line), f) && NUM_CATEGORIES < MAX_CATEGORIES) {
         // Trim newline
@@ -89,13 +103,12 @@ void load_config(void) {
         // Skip empty lines and comments
         if (line[0] == 0 || line[0] == ';' || line[0] == '#') continue;
 
-        // Section header
+        // Section headers
         if (line[0] == '[') {
             in_categories = (strncmp(line, "[Categories]", 12) == 0);
+            in_settings   = (strncmp(line, "[Settings]",   10) == 0);
             continue;
         }
-
-        if (!in_categories) continue;
 
         // Parse key = value
         char *eq = strchr(line, '=');
@@ -115,24 +128,127 @@ void load_config(void) {
         end = val + strlen(val) - 1;
         while (end > val && *end == ' ') { *end = 0; end--; }
 
-        // Store in CATEGORIES
-        strncpy(CATEGORIES[NUM_CATEGORIES].name, key,
-                sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1);
-
-        if (strncmp(val, "local://", 8) == 0) {
-            // Local path
-            CATEGORIES[NUM_CATEGORIES].url[0] = 0;
-            strncpy(CATEGORIES[NUM_CATEGORIES].localpath, val + 8,
-                    sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1);
-        } else {
-            // Remote URL
-            strncpy(CATEGORIES[NUM_CATEGORIES].url, val,
-                    sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1);
-            CATEGORIES[NUM_CATEGORIES].localpath[0] = 0;
+        if (in_settings) {
+            if (strcmp(key, "first_run") == 0) {
+                is_first_run = (strcmp(val, "true") == 0);
+            }
+            // Future settings keys can be added here
         }
 
-        NUM_CATEGORIES++;
+        if (in_categories) {
+            strncpy(CATEGORIES[NUM_CATEGORIES].name, key,
+                    sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1);
+            CATEGORIES[NUM_CATEGORIES].name[sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1] = 0;
+
+            if (strncmp(val, "local://", 8) == 0) {
+                CATEGORIES[NUM_CATEGORIES].url[0] = 0;
+                strncpy(CATEGORIES[NUM_CATEGORIES].localpath, val + 8,
+                        sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1);
+                CATEGORIES[NUM_CATEGORIES].localpath[sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1] = 0;
+            } else {
+                strncpy(CATEGORIES[NUM_CATEGORIES].url, val,
+                        sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1);
+                CATEGORIES[NUM_CATEGORIES].url[sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1] = 0;
+                CATEGORIES[NUM_CATEGORIES].localpath[0] = 0;
+            }
+            NUM_CATEGORIES++;
+        }
     }
+    fclose(f);
+}
+
+void show_splash(SDL_Renderer *renderer, TTF_Font *font) {
+    // Load splash image from romfs
+    SDL_Surface *bg = IMG_Load("romfs:/splash.png");
+    SDL_Texture *splash_tex = NULL;
+    if (bg) {
+        splash_tex = SDL_CreateTextureFromSurface(renderer, bg);
+        SDL_FreeSurface(bg);
+    }
+
+    SDL_Color white  = {255, 255, 255, 255};
+    SDL_Color yellow = {255, 220,  80, 255};
+    SDL_Color cyan   = { 80, 220, 255, 255};
+
+    // Wait for any button press to dismiss
+    bool dismissed = false;
+    while (!dismissed) {
+        // Render background
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        if (splash_tex) {
+            SDL_RenderCopy(renderer, splash_tex, NULL, NULL);
+        }
+
+        // Semi-transparent overlay panel
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+        SDL_Rect panel = {140, 160, 1000, 400};
+        SDL_RenderFillRect(renderer, &panel);
+
+        // Title
+        render_text(renderer, font, "Welcome to NX PhotoFrame!",
+                    cyan, 160, 185);
+
+        // Instructions
+        render_text(renderer, font,
+                    "NX PhotoFrame displays images from remote or local sources.",
+                    white, 160, 240);
+        render_text(renderer, font,
+                    "Use D-Pad Left/Right to switch categories.",
+                    white, 160, 275);
+        render_text(renderer, font,
+                    "Use [+]/[-] to adjust the refresh interval.",
+                    white, 160, 310);
+        render_text(renderer, font,
+                    "Customize your categories by editing your config file at:",
+                    white, 160, 360);
+        render_text(renderer, font,
+                    "sdmc:/config/NXPhotoFrame/config.ini",
+                    yellow, 160, 395);
+        render_text(renderer, font,
+                    "Local categories such as Album, if empty will display an error.",
+                    white, 160, 445);
+        render_text(renderer, font,
+                    "Press any button to continue...",
+                    cyan, 160, 510);
+
+        SDL_RenderPresent(renderer);
+
+        // Check for any button press
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_JOYBUTTONDOWN ||
+                event.type == SDL_FINGERDOWN ||
+                event.type == SDL_MOUSEBUTTONDOWN) {
+                dismissed = true;
+            }
+        }
+        SDL_Delay(16);
+    }
+
+    if (splash_tex) SDL_DestroyTexture(splash_tex);
+}
+
+void write_first_run_false(void) {
+    // Read entire config into memory
+    FILE *f = fopen(CONFIG_PATH, "r");
+    if (!f) return;
+    char contents[4096] = {0};
+    fread(contents, 1, sizeof(contents) - 1, f);
+    fclose(f);
+
+    // Replace "first_run = true" with "first_run = false"
+    char *pos = strstr(contents, "first_run = true");
+    if (pos) {
+        // "false" is one char longer than "true" so shift
+        memmove(pos + 17, pos + 16, strlen(pos + 16) + 1);
+        memcpy(pos + 13, "false", 5);
+    }
+
+    f = fopen(CONFIG_PATH, "w");
+    if (!f) return;
+    fputs(contents, f);
     fclose(f);
 }
 
@@ -428,6 +544,11 @@ int main(int argc, char *argv[]) {
     Uint32 last_fetch   = SDL_GetTicks() - (interval_mins * 60 * 1000);
     SDL_Texture *current_image = NULL;
 
+    if (is_first_run) {
+        show_splash(renderer, font);
+        write_first_run_false();
+    }
+
     while (1) {
         Uint32 now = SDL_GetTicks();
 
@@ -516,7 +637,7 @@ int main(int argc, char *argv[]) {
             ui_visible = 0;
             if (pending_fetch) {
                 pending_fetch = 0;
-                last_fetch = now - (interval_mins * 60 * 1000); // trigger immediate fetch
+                llast_fetch = 0;
             }
         }
 
