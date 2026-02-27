@@ -127,59 +127,78 @@ SDL_Texture* fetch_image(SDL_Renderer *renderer, const char *url, char *status_o
     return texture;
 }
 
+// Count and collect image files recursively
+static int collect_images(const char *folderpath, char ***list, int *count, int *capacity) {
+    DIR *dir = opendir(folderpath);
+    if (!dir) return 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        char fullpath[512];
+        snprintf(fullpath, sizeof(fullpath), "%s%s", folderpath, entry->d_name);
+
+        if (entry->d_type == DT_DIR) {
+            // Recurse into subdirectory
+            char subpath[512];
+            snprintf(subpath, sizeof(subpath), "%s%s/", folderpath, entry->d_name);
+            collect_images(subpath, list, count, capacity);
+        } else {
+            const char *ext = strrchr(entry->d_name, '.');
+            if (ext && (
+                strcasecmp(ext, ".jpg") == 0 ||
+                strcasecmp(ext, ".jpeg") == 0 ||
+                strcasecmp(ext, ".png") == 0)) {
+                // Grow list if needed
+                if (*count >= *capacity) {
+                    *capacity *= 2;
+                    *list = realloc(*list, *capacity * sizeof(char *));
+                }
+                (*list)[*count] = strdup(fullpath);
+                (*count)++;
+            }
+        }
+    }
+    closedir(dir);
+    return *count;
+}
+
 SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
                                char *status_out, size_t status_len) {
-    DIR *dir = opendir(folderpath);
-    if (!dir) {
+    // Check folder exists first
+    DIR *test = opendir(folderpath);
+    if (!test) {
         snprintf(status_out, status_len, "Folder not found: %s", folderpath);
         return NULL;
     }
+    closedir(test);
 
-    // Count valid image files first
-    struct dirent *entry;
+    // Collect all images recursively
     int count = 0;
-    while ((entry = readdir(dir)) != NULL) {
-        const char *ext = strrchr(entry->d_name, '.');
-        if (ext && (
-            strcasecmp(ext, ".jpg") == 0 ||
-            strcasecmp(ext, ".jpeg") == 0 ||
-            strcasecmp(ext, ".png") == 0)) {
-            count++;
-        }
-    }
+    int capacity = 64;
+    char **imagelist = malloc(capacity * sizeof(char *));
+
+    collect_images(folderpath, &imagelist, &count, &capacity);
 
     if (count == 0) {
-        closedir(dir);
+        free(imagelist);
         snprintf(status_out, status_len, "No images found in %s", folderpath);
         return NULL;
     }
 
     // Pick a random one
     int target = rand() % count;
-    rewinddir(dir);
-    int current = 0;
-    char filepath[512] = {0};
-    while ((entry = readdir(dir)) != NULL) {
-        const char *ext = strrchr(entry->d_name, '.');
-        if (ext && (
-            strcasecmp(ext, ".jpg") == 0 ||
-            strcasecmp(ext, ".jpeg") == 0 ||
-            strcasecmp(ext, ".png") == 0)) {
-            if (current == target) {
-                snprintf(filepath, sizeof(filepath), "%s%s", folderpath, entry->d_name);
-                break;
-            }
-            current++;
-        }
-    }
-    closedir(dir);
+    char chosen[512];
+    strncpy(chosen, imagelist[target], sizeof(chosen) - 1);
 
-    if (filepath[0] == 0) {
-        snprintf(status_out, status_len, "Failed to select image.");
-        return NULL;
-    }
+    // Free the list
+    for (int i = 0; i < count; i++) free(imagelist[i]);
+    free(imagelist);
 
-    SDL_Surface *surface = IMG_Load(filepath);
+    SDL_Surface *surface = IMG_Load(chosen);
     if (!surface) {
         snprintf(status_out, status_len, "IMG_Load failed: %s", IMG_GetError());
         return NULL;
@@ -193,7 +212,9 @@ SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
         return NULL;
     }
 
-    snprintf(status_out, status_len, "Local: %s", entry->d_name);
+    // Show just the filename in status, not the full path
+    const char *filename = strrchr(chosen, '/');
+    snprintf(status_out, status_len, "Local: %s", filename ? filename + 1 : chosen);
     return texture;
 }
 
