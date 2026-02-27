@@ -157,6 +157,8 @@ void load_config(void) {
     fclose(f);
 }
 
+void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_Color color, int x, int y);
+
 void show_splash(SDL_Renderer *renderer, TTF_Font *font) {
     // Load splash image from romfs
     SDL_Surface *bg = IMG_Load("romfs:/splash.png");
@@ -637,7 +639,7 @@ int main(int argc, char *argv[]) {
             ui_visible = 0;
             if (pending_fetch) {
                 pending_fetch = 0;
-                llast_fetch = 0;
+                last_fetch = 0;
             }
         }
 
