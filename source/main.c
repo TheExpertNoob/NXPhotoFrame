@@ -8,6 +8,7 @@
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
 #include <curl/curl.h>
+#include <sys/stat.h>
 
 #define SCREEN_W 1280
 #define SCREEN_H 720
@@ -21,7 +22,6 @@
 #define BTN_DLEFT   12
 #define BTN_DRIGHT  14
 
-// At the top of your file, define them for readability
 #define ICON_DLEFT  "\xee\x80\x80"   // U+E000
 #define ICON_DRIGHT "\xee\x80\x81"   // U+E001
 #define ICON_PLUS   "\xee\x80\x82"   // U+E002
@@ -29,28 +29,112 @@
 #define ICON_A      "\xee\x80\x84"   // U+E004
 #define ICON_B      "\xee\x80\x85"   // U+E005
 
+#define MAX_CATEGORIES 32
+#define CONFIG_PATH "sdmc:/config/NXPhotoFrame/config.ini"
+#define CONFIG_DIR  "sdmc:/config/NXPhotoFrame"
+
 typedef struct {
-    const char *name;
-    const char *url;       // NULL if local
-    const char *localpath; // NULL if remote
+    char name[64];
+    char url[256];       // NULL-equivalent: empty string
+    char localpath[256]; // NULL-equivalent: empty string
 } Category;
 
-static const Category CATEGORIES[] = {
-    { "Album",          NULL, "sdmc:/Nintendo/Album/"             },
-	{ "Video Games",    "https://gandalfsax.com/images/vg.jpg", NULL    },
-	{ "Halloween",      "https://gandalfsax.com/images/hw.jpg", NULL    },
-    { "Ancient Girls",  "https://gandalfsax.com/images/ag.jpg", NULL    },
-    { "Gaming Girls",   "https://gandalfsax.com/images/gg.jpg", NULL    },
-    { "Lofi Time",      "https://gandalfsax.com/images/lt.jpg", NULL    },
-    { "Waifu & Chill",  "https://gandalfsax.com/images/wac.jpg", NULL   },
-	{ "All Girls",      "https://gandalfsax.com/images/girls.jpg", NULL },
-};
-#define NUM_CATEGORIES 8
+static Category CATEGORIES[MAX_CATEGORIES];
+static int NUM_CATEGORIES = 0;
 
 typedef struct {
     unsigned char *data;
     size_t size;
 } MemoryBuffer;
+
+// Create directory and/or file if it doesn't exist
+void write_default_config(void) {
+    mkdir(CONFIG_DIR, 0777);
+
+    FILE *f = fopen(CONFIG_PATH, "w");
+    if (!f) return;
+
+    fprintf(f, "[Categories]\n");
+	fprintf(f, "Album = local://sdmc:/Nintendo/Album/\n");
+	fprintf(f, "Video Games = https://gandalfsax.com/images/vg.jpg\n");
+	fprintf(f, "Halloween = https://gandalfsax.com/images/hw.jpg\n");
+    fprintf(f, "Ancient Girls = https://gandalfsax.com/images/ag.jpg\n");
+    fprintf(f, "Gaming Girls = https://gandalfsax.com/images/gg.jpg\n");
+    fprintf(f, "Lofi Time = https://gandalfsax.com/images/lt.jpg\n");
+    fprintf(f, "Waifu & Chill = https://gandalfsax.com/images/wac.jpg\n");
+	fprintf(f, "All Girls = https://gandalfsax.com/images/girls.jpg\n");
+    fclose(f);
+}
+
+void load_config(void) {
+    // If config doesn't exist, write defaults first
+    FILE *f = fopen(CONFIG_PATH, "r");
+    if (!f) {
+        write_default_config();
+        f = fopen(CONFIG_PATH, "r");
+        if (!f) return; // SD card issue
+    }
+
+    NUM_CATEGORIES = 0;
+    char line[320];
+    int in_categories = 0;
+
+    while (fgets(line, sizeof(line), f) && NUM_CATEGORIES < MAX_CATEGORIES) {
+        // Trim newline
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = 0;
+        char *cr = strchr(line, '\r');
+        if (cr) *cr = 0;
+
+        // Skip empty lines and comments
+        if (line[0] == 0 || line[0] == ';' || line[0] == '#') continue;
+
+        // Section header
+        if (line[0] == '[') {
+            in_categories = (strncmp(line, "[Categories]", 12) == 0);
+            continue;
+        }
+
+        if (!in_categories) continue;
+
+        // Parse key = value
+        char *eq = strchr(line, '=');
+        if (!eq) continue;
+
+        *eq = 0;
+        char *key = line;
+        char *val = eq + 1;
+
+        // Trim whitespace from key
+        while (*key == ' ') key++;
+        char *end = key + strlen(key) - 1;
+        while (end > key && *end == ' ') { *end = 0; end--; }
+
+        // Trim whitespace from value
+        while (*val == ' ') val++;
+        end = val + strlen(val) - 1;
+        while (end > val && *end == ' ') { *end = 0; end--; }
+
+        // Store in CATEGORIES
+        strncpy(CATEGORIES[NUM_CATEGORIES].name, key,
+                sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1);
+
+        if (strncmp(val, "local://", 8) == 0) {
+            // Local path
+            CATEGORIES[NUM_CATEGORIES].url[0] = 0;
+            strncpy(CATEGORIES[NUM_CATEGORIES].localpath, val + 8,
+                    sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1);
+        } else {
+            // Remote URL
+            strncpy(CATEGORIES[NUM_CATEGORIES].url, val,
+                    sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1);
+            CATEGORIES[NUM_CATEGORIES].localpath[0] = 0;
+        }
+
+        NUM_CATEGORIES++;
+    }
+    fclose(f);
+}
 
 static size_t write_callback(char *contents, size_t size, size_t nmemb, void *userp) {
     size_t total = size * nmemb;
@@ -262,6 +346,7 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 int main(int argc, char *argv[]) {
     romfsInit();
 	fsdevMountSdmc();
+	load_config();
     socketInitializeDefault();
     appletInitialize();
 	
@@ -316,7 +401,7 @@ int main(int argc, char *argv[]) {
         if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
             SDL_Texture *new_image = NULL;
 
-            if (CATEGORIES[cat_index].url != NULL) {
+            if (CATEGORIES[cat_index].url[0] != 0) {
                 // Remote fetch — check network first
                 nifmInitialize(NifmServiceType_User);
                 rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
@@ -345,7 +430,7 @@ int main(int argc, char *argv[]) {
                     snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
                 }
 
-            } else if (CATEGORIES[cat_index].localpath != NULL) {
+            } else if (CATEGORIES[cat_index].localpath[0] != 0) {
                 // Local fetch — no network check needed
                 new_image = load_local_image(renderer,
                     CATEGORIES[cat_index].localpath, fetch_status, sizeof(fetch_status));
