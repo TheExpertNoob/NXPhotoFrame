@@ -541,6 +541,7 @@ int main(int argc, char *argv[]) {
     int interval_mins = DEFAULT_INTERVAL_MINS;
     int cat_index     = 0;
 	int pending_fetch = 0;
+	int force_fetch   = 0;
     int ui_visible    = 1;
     Uint32 ui_show_time = SDL_GetTicks();
     Uint32 last_fetch   = SDL_GetTicks() - (interval_mins * 60 * 1000);
@@ -555,7 +556,8 @@ int main(int argc, char *argv[]) {
         Uint32 now = SDL_GetTicks();
 
         // Fetch when timer expires
-        if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
+        if (force_fetch || (now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
+            force_fetch = 0;
             SDL_Texture *new_image = NULL;
 
             if (CATEGORIES[cat_index].url[0] != 0) {
@@ -639,7 +641,7 @@ int main(int argc, char *argv[]) {
             ui_visible = 0;
             if (pending_fetch) {
                 pending_fetch = 0;
-                last_fetch = 0;
+                force_fetch = 1;
             }
         }
 
