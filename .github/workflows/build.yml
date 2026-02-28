@@ -48,7 +48,9 @@ jobs:
           echo "${{ secrets.ACID_PRIVATE_KEY }}" > acid_private.pem
           echo "${{ secrets.NCASIG2_PRIVATE_KEY }}" > ncasig2_private.pem
           openssl rsa -in ncasig2_private.pem -noout -modulus | \
-            sed 's/Modulus=//' | xxd -r -p > ncasig2_modulus.bin
+           sed 's/Modulus=//' | \
+           python3 -c "import sys, binascii; sys.stdout.buffer.write(binascii.unhexlify(sys.stdin.read().strip()))" \
+           > ncasig2_modulus.bin
           chmod +x tools/hacpack
 
       - name: Prepare NSP build directories
