@@ -72,7 +72,7 @@ jobs:
           HACPACK_FLAGS="-k ./keys.dat \
             -o ./nca/ \
             --type nca \
-            --keygeneration 20 \
+            --keygeneration 21 \
             --sdkversion 15040000 \
             --ncatype program \
             --titleid 0100BAEFAE420000 \
@@ -102,7 +102,7 @@ jobs:
             -k ./keys.dat \
             -o ./nca/ \
             --type nca \
-            --keygeneration 20 \
+            --keygeneration 21 \
             --sdkversion 15040000 \
             --ncatype meta \
             --titletype application \
