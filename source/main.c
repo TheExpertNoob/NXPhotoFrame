@@ -233,24 +233,24 @@ void show_splash(SDL_Renderer *renderer, TTF_Font *font) {
 }
 
 void write_first_run_false(void) {
-    // Read entire config into memory
     FILE *f = fopen(CONFIG_PATH, "r");
     if (!f) return;
-    char contents[4096] = {0};
-    fread(contents, 1, sizeof(contents) - 1, f);
-    fclose(f);
 
-    // Replace "first_run = true" with "first_run = false"
-    char *pos = strstr(contents, "first_run = true");
-    if (pos) {
-        // "false" is one char longer than "true" so shift
-        memmove(pos + 17, pos + 16, strlen(pos + 16) + 1);
-        memcpy(pos + 13, "false", 5);
+    char newcontents[4096] = {0};
+    char line[320];
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "first_run", 9) == 0) {
+            strcat(newcontents, "first_run = false\n");
+        } else {
+            strcat(newcontents, line);
+        }
     }
+    fclose(f);
 
     f = fopen(CONFIG_PATH, "w");
     if (!f) return;
-    fputs(contents, f);
+    fputs(newcontents, f);
     fclose(f);
 }
 
