@@ -1,16 +1,13 @@
 name: Build PhotoFrame
-
 on:
   push:
     branches: [ dev ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,41 +31,86 @@ jobs:
 
       - name: Build
         run: make
-        
+
       - name: Generate NSO and NPDM
         run: |
-          # ELF is built by make, convert to NSO
           mkdir -p exefs
           /opt/devkitpro/tools/bin/elf2nso \
             photoframe.elf \
             exefs/main
-      
-          # Generate NPDM using npdmtool
           /opt/devkitpro/tools/bin/npdmtool \
             npdm.json \
             exefs/main.npdm
-      
-      - name: Upload NSP components
-        uses: actions/upload-artifact@v4
-        with:
-          name: nsp-components
-          path: |
-            exefs/main
-            exefs/main.npdm
-            romfs/
-            logo/NintendoLogo.png
-            logo/StartupMovie.gif
-            icon1024.jpg
-            photoframe.nsxml
+
+      - name: Setup hacpack and keys
+        run: |
+          echo "${{ secrets.HACPACK_KEYS }}" > keys.dat
+          chmod +x tools/hacpack
+
+      - name: Prepare NSP build directories
+        run: |
+          mkdir -p nca nsp
+          cp control_nca/*.nca nca/
+
+      - name: Build Program NCA
+        run: |
+          tools/hacpack \
+            -k ./keys.dat \
+            -o ./nca/ \
+            --type nca \
+            --keygeneration 20 \
+            --sdkversion 15040000 \
+            --ncatype program \
+            --titleid 0100BAEFAE420000 \
+            --exefsdir ./exefs/ \
+            --romfsdir ./romfs/ \
+            --logodir ./logo/
+          
+          PROGRAM_NCA=$(ls nca/ | grep -v "$(ls control_nca/)" | head -1)
+          echo "PROGRAM_NCA=$PROGRAM_NCA" >> $GITHUB_ENV
+
+      - name: Build Meta NCA
+        run: |
+          CONTROL_NCA=$(ls control_nca/)
+          tools/hacpack \
+            -k ./keys.dat \
+            -o ./nca/ \
+            --type nca \
+            --keygeneration 20 \
+            --sdkversion 15040000 \
+            --ncatype meta \
+            --titletype application \
+            --titleid 0100BAEFAE420000 \
+            --requiredsystemversion 21.1.0 \
+            --programnca ./nca/${{ env.PROGRAM_NCA }} \
+            --controlnca ./nca/$CONTROL_NCA
+
+      - name: Build NSP
+        run: |
+          tools/hacpack \
+            -k ./keys.dat \
+            -o ./nsp/ \
+            --type nsp \
+            --ncadir ./nca/ \
+            --titleid 0100BAEFAE420000
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f keys.dat
 
       - name: Prepare NRO
         run: |
           mkdir -p switch
           cp photoframe.nro switch/NXPhotoFrame.nro
-      
+
       - name: Upload NRO
         uses: actions/upload-artifact@v4
         with:
           name: NXPhotoFrame-nro
-          path: |
-            switch/NXPhotoFrame.nro
+          path: switch/NXPhotoFrame.nro
+
+      - name: Upload NSP
+        uses: actions/upload-artifact@v4
+        with:
+          name: NXPhotoFrame-nsp
+          path: nsp/*.nsp
