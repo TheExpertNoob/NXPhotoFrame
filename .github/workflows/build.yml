@@ -45,6 +45,10 @@ jobs:
       - name: Setup hacpack and keys
         run: |
           echo "${{ secrets.HACPACK_KEYS }}" > keys.dat
+          echo "${{ secrets.ACID_PRIVATE_KEY }}" > acid_private.pem
+          echo "${{ secrets.NCASIG2_PRIVATE_KEY }}" > ncasig2_private.pem
+          openssl rsa -in ncasig2_private.pem -noout -modulus | \
+            sed 's/Modulus=//' | xxd -r -p > ncasig2_modulus.bin
           chmod +x tools/hacpack
 
       - name: Prepare NSP build directories
@@ -64,8 +68,11 @@ jobs:
             --titleid 0100BAEFAE420000 \
             --exefsdir ./exefs/ \
             --romfsdir ./romfs/ \
-            --logodir ./logo/
-          
+            --logodir ./logo/ \
+            --acidsigprivatekey ./acid_private.pem \
+            --ncasig2privatekey ./ncasig2_private.pem \
+            --ncasig2modulus ./ncasig2_modulus.bin
+
           PROGRAM_NCA=$(ls nca/ | grep -v "$(ls control_nca/)" | head -1)
           echo "PROGRAM_NCA=$PROGRAM_NCA" >> $GITHUB_ENV
 
@@ -94,20 +101,20 @@ jobs:
             --ncadir ./nca/ \
             --titleid 0100BAEFAE420000
 
-      - name: Rename NSP
-        run: |
-          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d ' ')
-          mv nsp/0100baefae420000.nsp "nsp/NXPhotoFrame [0100BAEFAE420000][v${VERSION}].nsp"
-      
       - name: Cleanup sensitive files
         if: always()
-        run: rm -f keys.dat
+        run: rm -f keys.dat acid_private.pem ncasig2_private.pem ncasig2_modulus.bin
+
+      - name: Rename NSP
+        run: |
+          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d ' _')
+          mv nsp/0100baefae420000.nsp "nsp/NXPhotoFrame [0100BAEFAE420000][v${VERSION}].nsp"
 
       - name: Prepare NRO
         run: |
-          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d ' ')
+          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d ' _')
           mkdir -p switch
-          cp photoframe.nro "switch/NXPhotoFrame(v${VERSION}).nro"
+          cp photoframe.nro "switch/NXPhotoFrame [v${VERSION}].nro"
 
       - name: Upload NRO
         uses: actions/upload-artifact@v4
