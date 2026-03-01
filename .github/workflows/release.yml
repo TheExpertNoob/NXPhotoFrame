@@ -1,0 +1,167 @@
+name: Build PhotoFrame
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install portlibs
+        run: |
+          dkp-pacman -Sy --noconfirm \
+            switch-sdl2 \
+            switch-sdl2_image \
+            switch-sdl2_ttf \
+            switch-curl \
+            switch-mbedtls \
+            switch-libjpeg-turbo \
+            switch-libpng \
+            switch-libwebp \
+            switch-freetype \
+            switch-harfbuzz \
+            switch-portlibs \
+            switch-bzip2 \
+            switch-zlib
+
+      - name: Build
+        run: make
+
+      - name: Generate NSO and NPDM
+        run: |
+          mkdir -p exefs
+          /opt/devkitpro/tools/bin/elf2nso \
+            photoframe.elf \
+            exefs/main
+          /opt/devkitpro/tools/bin/npdmtool \
+            npdm.json \
+            exefs/main.npdm
+
+      - name: Setup hacpack and keys
+        run: |
+          echo "${{ secrets.HACPACK_KEYS }}" > keys.dat
+          echo "${{ secrets.NCASIG2_PRIVATE_KEY }}" > ncasig2_private.pem
+          openssl rsa -in ncasig2_private.pem -noout -modulus | \
+            sed 's/Modulus=//' | \
+            python3 -c "import sys, binascii; sys.stdout.buffer.write(binascii.unhexlify(sys.stdin.read().strip()))" \
+            > ncasig2_modulus.bin
+
+          # Write optional keys only if secrets are present
+          if [ -n "${{ secrets.ACID_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.ACID_PRIVATE_KEY }}" > acid_private.pem
+          fi
+          if [ -n "${{ secrets.NCASIG1_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.NCASIG1_PRIVATE_KEY }}" > ncasig1_private.pem
+          fi
+
+          chmod +x tools/hacpack
+
+      - name: Prepare NSP build directories
+        run: |
+          mkdir -p nca nsp
+          cp control_nca/*.nca nca/
+
+      - name: Build Program NCA
+        run: |
+          # Base flags always present
+          HACPACK_FLAGS="-k ./keys.dat \
+            -o ./nca/ \
+            --type nca \
+            --keygeneration 21 \
+            --sdkversion 15040000 \
+            --ncatype program \
+            --titleid 0100BAEFAE420000 \
+            --exefsdir ./exefs/ \
+            --romfsdir ./romfs/ \
+            --logodir ./logo/ \
+            --ncasig2privatekey ./ncasig2_private.pem \
+            --ncasig2modulus ./ncasig2_modulus.bin"
+
+          # Append optional flags only if keys exist
+          if [ -f acid_private.pem ]; then
+            HACPACK_FLAGS="$HACPACK_FLAGS --acidsigprivatekey ./acid_private.pem"
+          fi
+          if [ -f ncasig1_private.pem ]; then
+            HACPACK_FLAGS="$HACPACK_FLAGS --ncasig1privatekey ./ncasig1_private.pem"
+          fi
+
+          tools/hacpack $HACPACK_FLAGS
+
+          PROGRAM_NCA=$(ls nca/ | grep -v "$(ls control_nca/)" | head -1)
+          echo "PROGRAM_NCA=$PROGRAM_NCA" >> $GITHUB_ENV
+
+      - name: Build Meta NCA
+        run: |
+          CONTROL_NCA=$(ls control_nca/)
+          tools/hacpack \
+            -k ./keys.dat \
+            -o ./nca/ \
+            --type nca \
+            --keygeneration 21 \
+            --sdkversion 15040000 \
+            --ncatype meta \
+            --titletype application \
+            --titleid 0100BAEFAE420000 \
+            --requiredsystemversion 21.2.0 \
+            --programnca ./nca/${{ env.PROGRAM_NCA }} \
+            --controlnca ./nca/$CONTROL_NCA
+
+      - name: Build NSP
+        run: |
+          tools/hacpack \
+            -k ./keys.dat \
+            -o ./nsp/ \
+            --type nsp \
+            --ncadir ./nca/ \
+            --titleid 0100BAEFAE420000
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: rm -f keys.dat acid_private.pem ncasig1_private.pem ncasig2_private.pem ncasig2_modulus.bin
+
+      - name: Get Version
+        id: get_version
+        run: |
+          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d '[:space:]_')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Rename NSP
+        run: mv nsp/0100baefae420000.nsp "nsp/NXPhotoFrame [0100BAEFAE420000][v${{ env.VERSION }}].nsp"
+
+      - name: Prepare NRO
+        run: |
+          mkdir -p switch
+          cp photoframe.nro "switch/NXPhotoFrame [v${{ env.VERSION }}].nro"
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: NX PhotoFrame v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          body: |
+            ## NX PhotoFrame v${{ steps.get_version.outputs.version }}
+            
+            ### Changes
+            <!-- Edit this before publishing -->
+            
+            ### Installation
+            **NSP:** Install via Tinfoil or DBI
+            **NRO:** Copy to `/switch/NXPhotoFrame/` on your SD card
+            
+            ### Requirements
+            - Atmosphere CFW
+            - Firmware 21.2.0 or higher
+          files: |
+            nsp/*.nsp
+            switch/*.nro
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
