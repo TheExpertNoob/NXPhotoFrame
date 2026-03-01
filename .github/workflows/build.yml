@@ -107,7 +107,7 @@ jobs:
             --ncatype meta \
             --titletype application \
             --titleid 0100BAEFAE420000 \
-            --requiredsystemversion 21.1.0 \
+            --requiredsystemversion 21.2.0 \
             --programnca ./nca/${{ env.PROGRAM_NCA }} \
             --controlnca ./nca/$CONTROL_NCA
 
