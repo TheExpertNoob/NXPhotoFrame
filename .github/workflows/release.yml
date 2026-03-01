@@ -1,8 +1,9 @@
 name: Build PhotoFrame
 on:
   push:
-    branches: [ dev ]
+    branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -124,25 +125,43 @@ jobs:
         if: always()
         run: rm -f keys.dat acid_private.pem ncasig1_private.pem ncasig2_private.pem ncasig2_modulus.bin
 
-      - name: Rename NSP
+      - name: Get Version
+        id: get_version
         run: |
           VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d '[:space:]_')
-          mv nsp/0100baefae420000.nsp "nsp/NXPhotoFrame [0100BAEFAE420000][v${VERSION}].nsp"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Rename NSP
+        run: mv nsp/0100baefae420000.nsp "nsp/NXPhotoFrame [0100BAEFAE420000][v${{ env.VERSION }}].nsp"
 
       - name: Prepare NRO
         run: |
-          VERSION=$(grep "APP_VERSION" Makefile | head -1 | cut -d'=' -f2 | tr -d '[:space:]_')
           mkdir -p switch
-          cp photoframe.nro "switch/NXPhotoFrame [v${VERSION}].nro"
+          cp photoframe.nro "switch/NXPhotoFrame [v${{ env.VERSION }}].nro"
 
-      - name: Upload NRO
-        uses: actions/upload-artifact@v4
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: NXPhotoFrame-nro
-          path: switch/*.nro
-
-      - name: Upload NSP
-        uses: actions/upload-artifact@v4
-        with:
-          name: NXPhotoFrame-nsp
-          path: nsp/*.nsp
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: NX PhotoFrame v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          body: |
+            ## NX PhotoFrame v${{ steps.get_version.outputs.version }}
+            
+            ### Changes
+            <!-- Edit this before publishing -->
+            
+            ### Installation
+            **NSP:** Install via Tinfoil or DBI
+            **NRO:** Copy to `/switch/NXPhotoFrame/` on your SD card
+            
+            ### Requirements
+            - Atmosphere CFW
+            - Firmware 21.2.0 or higher
+          files: |
+            nsp/*.nsp
+            switch/*.nro
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

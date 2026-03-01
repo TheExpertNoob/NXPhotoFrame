@@ -1,11 +1,14 @@
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <switch.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
 #include <curl/curl.h>
+#include <sys/stat.h>
 
 #define SCREEN_W 1280
 #define SCREEN_H 720
@@ -19,7 +22,6 @@
 #define BTN_DLEFT   12
 #define BTN_DRIGHT  14
 
-// At the top of your file, define them for readability
 #define ICON_DLEFT  "\xee\x80\x80"   // U+E000
 #define ICON_DRIGHT "\xee\x80\x81"   // U+E001
 #define ICON_PLUS   "\xee\x80\x82"   // U+E002
@@ -27,26 +29,230 @@
 #define ICON_A      "\xee\x80\x84"   // U+E004
 #define ICON_B      "\xee\x80\x85"   // U+E005
 
+#define MAX_CATEGORIES 32
+#define CONFIG_PATH "sdmc:/config/NXPhotoFrame/config.ini"
+#define CONFIG_DIR  "sdmc:/config/NXPhotoFrame"
+
 typedef struct {
-    const char *name;
-    const char *url;
+    char name[64];
+    char url[256];       // NULL-equivalent: empty string
+    char localpath[256]; // NULL-equivalent: empty string
 } Category;
 
-static const Category CATEGORIES[] = {
-    { "Video Games",    "https://gandalfsax.com/images/vg.jpg"    },
-	{ "Halloween",      "https://gandalfsax.com/images/hw.jpg"    },
-    { "Ancient Girls",  "https://gandalfsax.com/images/ag.jpg"    },
-    { "Gaming Girls",   "https://gandalfsax.com/images/gg.jpg"    },
-    { "Lofi Time",      "https://gandalfsax.com/images/lt.jpg"    },
-    { "Waifu & Chill",  "https://gandalfsax.com/images/wac.jpg"   },
-	{ "All Girls",      "https://gandalfsax.com/images/girls.jpg" },
-};
-#define NUM_CATEGORIES 7
+static Category CATEGORIES[MAX_CATEGORIES];
+static int NUM_CATEGORIES = 0;
 
 typedef struct {
     unsigned char *data;
     size_t size;
 } MemoryBuffer;
+
+// Create directory and/or file if it doesn't exist
+void write_default_config(void) {
+    mkdir(CONFIG_DIR, 0777);
+
+    FILE *f = fopen(CONFIG_PATH, "w");
+    if (!f) return;
+
+    fprintf(f, "[Settings]\n");
+    fprintf(f, "first_run = true\n");
+    fprintf(f, "\n");
+	fprintf(f, "; Remote categories use a web URL from my random image generator\n");
+	fprintf(f, "; hosted on gandalfsax.com. You can host your own too!\n");
+	fprintf(f, "; https://github.com/TheExpertNoob/randomImage\n");
+	fprintf(f, "\n");
+    fprintf(f, "; Local categories may be any folder on your SD card containing\n");
+	fprintf(f, "; JPGs and/or PNGs. Searches subdirectories too!\n");
+	fprintf(f, "\n");
+    fprintf(f, "; Add or remove categories freely in this file\n");
+	fprintf(f, "[Categories]\n");
+	fprintf(f, "Album = local://sdmc:/Nintendo/Album/\n");
+	fprintf(f, "Video Games = https://gandalfsax.com/images/vg.jpg\n");
+	fprintf(f, "Halloween = https://gandalfsax.com/images/hw.jpg\n");
+    fprintf(f, "Ancient Girls = https://gandalfsax.com/images/ag.jpg\n");
+    fprintf(f, "Gaming Girls = https://gandalfsax.com/images/gg.jpg\n");
+    fprintf(f, "Lofi Time = https://gandalfsax.com/images/lt.jpg\n");
+    fprintf(f, "Waifu & Chill = https://gandalfsax.com/images/wac.jpg\n");
+	fprintf(f, "All Girls = https://gandalfsax.com/images/girls.jpg\n");
+    fclose(f);
+}
+
+bool is_first_run = false;
+
+void load_config(void) {
+    // If config doesn't exist, write defaults first
+    FILE *f = fopen(CONFIG_PATH, "r");
+    if (!f) {
+        write_default_config();
+        f = fopen(CONFIG_PATH, "r");
+        if (!f) return; // SD card issue
+    }
+
+    NUM_CATEGORIES = 0;
+    char line[320];
+    int in_categories = 0;
+	int in_settings = 0;
+
+    while (fgets(line, sizeof(line), f) && NUM_CATEGORIES < MAX_CATEGORIES) {
+        // Trim newline
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = 0;
+        char *cr = strchr(line, '\r');
+        if (cr) *cr = 0;
+
+        // Skip empty lines and comments
+        if (line[0] == 0 || line[0] == ';' || line[0] == '#') continue;
+
+        // Section headers
+        if (line[0] == '[') {
+            in_categories = (strncmp(line, "[Categories]", 12) == 0);
+            in_settings   = (strncmp(line, "[Settings]",   10) == 0);
+            continue;
+        }
+
+        // Parse key = value
+        char *eq = strchr(line, '=');
+        if (!eq) continue;
+
+        *eq = 0;
+        char *key = line;
+        char *val = eq + 1;
+
+        // Trim whitespace from key
+        while (*key == ' ') key++;
+        char *end = key + strlen(key) - 1;
+        while (end > key && *end == ' ') { *end = 0; end--; }
+
+        // Trim whitespace from value
+        while (*val == ' ') val++;
+        end = val + strlen(val) - 1;
+        while (end > val && *end == ' ') { *end = 0; end--; }
+
+        if (in_settings) {
+            if (strcmp(key, "first_run") == 0) {
+                is_first_run = (strcmp(val, "true") == 0);
+            }
+            // Future settings keys can be added here
+        }
+
+        if (in_categories) {
+            strncpy(CATEGORIES[NUM_CATEGORIES].name, key,
+                    sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1);
+            CATEGORIES[NUM_CATEGORIES].name[sizeof(CATEGORIES[NUM_CATEGORIES].name) - 1] = 0;
+
+            if (strncmp(val, "local://", 8) == 0) {
+                CATEGORIES[NUM_CATEGORIES].url[0] = 0;
+                strncpy(CATEGORIES[NUM_CATEGORIES].localpath, val + 8,
+                        sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1);
+                CATEGORIES[NUM_CATEGORIES].localpath[sizeof(CATEGORIES[NUM_CATEGORIES].localpath) - 1] = 0;
+            } else {
+                strncpy(CATEGORIES[NUM_CATEGORIES].url, val,
+                        sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1);
+                CATEGORIES[NUM_CATEGORIES].url[sizeof(CATEGORIES[NUM_CATEGORIES].url) - 1] = 0;
+                CATEGORIES[NUM_CATEGORIES].localpath[0] = 0;
+            }
+            NUM_CATEGORIES++;
+        }
+    }
+    fclose(f);
+}
+
+void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_Color color, int x, int y);
+
+void show_splash(SDL_Renderer *renderer, TTF_Font *font) {
+    // Load splash image from romfs
+    SDL_Surface *bg = IMG_Load("romfs:/splash.png");
+    SDL_Texture *splash_tex = NULL;
+    if (bg) {
+        splash_tex = SDL_CreateTextureFromSurface(renderer, bg);
+        SDL_FreeSurface(bg);
+    }
+
+    SDL_Color white  = {255, 255, 255, 255};
+    SDL_Color yellow = {255, 220,  80, 255};
+    SDL_Color cyan   = { 80, 220, 255, 255};
+
+    // Wait for any button press to dismiss
+    bool dismissed = false;
+    while (!dismissed) {
+        // Render background
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        if (splash_tex) {
+            SDL_RenderCopy(renderer, splash_tex, NULL, NULL);
+        }
+
+        // Semi-transparent overlay panel
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+        SDL_Rect panel = {140, 160, 1000, 400};
+        SDL_RenderFillRect(renderer, &panel);
+
+        // Title
+        render_text(renderer, font, "Welcome to NX PhotoFrame!",
+                    cyan, 160, 185);
+
+        // Instructions
+        render_text(renderer, font,
+                    "NX PhotoFrame displays images from remote or local sources.",
+                    white, 160, 240);
+        render_text(renderer, font,
+                    "Use D-Pad Left/Right to switch categories.",
+                    white, 160, 275);
+        render_text(renderer, font,
+                    "Use [+]/[-] to adjust the refresh interval.",
+                    white, 160, 310);
+        render_text(renderer, font,
+                    "Customize your categories by editing your config file at:",
+                    white, 160, 360);
+        render_text(renderer, font,
+                    "sdmc:/config/NXPhotoFrame/config.ini",
+                    yellow, 160, 395);
+        render_text(renderer, font,
+                    "Local categories such as Album, if empty will display an error.",
+                    white, 160, 445);
+        render_text(renderer, font,
+                    "Press any button to continue...",
+                    cyan, 160, 510);
+
+        SDL_RenderPresent(renderer);
+
+        // Check for any button press
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_JOYBUTTONDOWN ||
+                event.type == SDL_FINGERDOWN ||
+                event.type == SDL_MOUSEBUTTONDOWN) {
+                dismissed = true;
+            }
+        }
+        SDL_Delay(16);
+    }
+
+    if (splash_tex) SDL_DestroyTexture(splash_tex);
+}
+
+void write_first_run_false(void) {
+    FILE *f = fopen(CONFIG_PATH, "r");
+    if (!f) return;
+
+    char newcontents[4096] = {0};
+    char line[320];
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "first_run", 9) == 0) {
+            strcat(newcontents, "first_run = false\n");
+        } else {
+            strcat(newcontents, line);
+        }
+    }
+    fclose(f);
+
+    f = fopen(CONFIG_PATH, "w");
+    if (!f) return;
+    fputs(newcontents, f);
+    fclose(f);
+}
 
 static size_t write_callback(char *contents, size_t size, size_t nmemb, void *userp) {
     size_t total = size * nmemb;
@@ -123,6 +329,131 @@ SDL_Texture* fetch_image(SDL_Renderer *renderer, const char *url, char *status_o
     return texture;
 }
 
+// Count and collect image files recursively
+static int collect_images(const char *folderpath, char ***list, int *count, int *capacity) {
+    DIR *dir = opendir(folderpath);
+    if (!dir) return 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        char fullpath[512];
+        snprintf(fullpath, sizeof(fullpath), "%s%s", folderpath, entry->d_name);
+
+        if (entry->d_type == DT_DIR) {
+            // Recurse into subdirectory
+            char subpath[512];
+            snprintf(subpath, sizeof(subpath), "%s%s/", folderpath, entry->d_name);
+            collect_images(subpath, list, count, capacity);
+        } else {
+            const char *ext = strrchr(entry->d_name, '.');
+            if (ext && (
+                strcasecmp(ext, ".jpg") == 0 ||
+                strcasecmp(ext, ".jpeg") == 0 ||
+                strcasecmp(ext, ".png") == 0)) {
+                // Grow list if needed
+                if (*count >= *capacity) {
+                    *capacity *= 2;
+                    *list = realloc(*list, *capacity * sizeof(char *));
+                }
+                (*list)[*count] = strdup(fullpath);
+                (*count)++;
+            }
+        }
+    }
+    closedir(dir);
+    return *count;
+}
+
+SDL_Texture* load_local_image(SDL_Renderer *renderer, const char *folderpath,
+                               char *status_out, size_t status_len) {
+    // Check folder exists first
+    DIR *test = opendir(folderpath);
+    if (!test) {
+        snprintf(status_out, status_len, "Folder not found: %s", folderpath);
+        return NULL;
+    }
+    closedir(test);
+
+    // Collect all images recursively
+    int count = 0;
+    int capacity = 64;
+    char **imagelist = malloc(capacity * sizeof(char *));
+
+    collect_images(folderpath, &imagelist, &count, &capacity);
+
+    if (count == 0) {
+        free(imagelist);
+        snprintf(status_out, status_len, "No images found in %s", folderpath);
+        return NULL;
+    }
+
+    // Pick a random one
+    int target = rand() % count;
+    char chosen[512];
+    strncpy(chosen, imagelist[target], sizeof(chosen) - 1);
+	chosen[sizeof(chosen) - 1] = 0;
+
+    // Free the list
+    for (int i = 0; i < count; i++) free(imagelist[i]);
+    free(imagelist);
+
+    SDL_Surface *surface = IMG_Load(chosen);
+    if (!surface) {
+    snprintf(status_out, status_len, "IMG_Load failed: %s", IMG_GetError());
+    return NULL;
+    }
+    
+    // Scale to fit 1280x720 preserving aspect ratio (letterbox/pillarbox)
+    if (surface->w != SCREEN_W || surface->h != SCREEN_H) {
+        float src_ratio = (float)surface->w / (float)surface->h;
+        float dst_ratio = (float)SCREEN_W / (float)SCREEN_H;
+    
+        int new_w, new_h;
+        if (src_ratio > dst_ratio) {
+            // Wider than 16:9 — fit width, letterbox top/bottom
+            new_w = SCREEN_W;
+            new_h = (int)(SCREEN_W / src_ratio);
+        } else {
+            // Taller than 16:9 — fit height, pillarbox left/right
+            new_h = SCREEN_H;
+            new_w = (int)(SCREEN_H * src_ratio);
+        }
+    
+        // Create black canvas at full screen size
+        SDL_Surface *canvas = SDL_CreateRGBSurface(0, SCREEN_W, SCREEN_H, 32,
+            0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+        SDL_FillRect(canvas, NULL, SDL_MapRGB(canvas->format, 0, 0, 0));
+    
+        // Center the scaled image on the canvas
+        SDL_Rect dst_rect = {
+            (SCREEN_W - new_w) / 2,
+            (SCREEN_H - new_h) / 2,
+            new_w,
+            new_h
+        };
+        SDL_BlitScaled(surface, NULL, canvas, &dst_rect);
+        SDL_FreeSurface(surface);
+        surface = canvas;
+    }
+
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+
+    if (!texture) {
+        snprintf(status_out, status_len, "CreateTexture failed");
+        return NULL;
+    }
+
+    // Show just the filename in status, not the full path
+    const char *filename = strrchr(chosen, '/');
+    snprintf(status_out, status_len, "Local: %s", filename ? filename + 1 : chosen);
+    return texture;
+}
+
 void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_Color color, int x, int y) {
     SDL_Surface *s = TTF_RenderUTF8_Blended(font, text, color);
     if (!s) return;
@@ -166,6 +497,8 @@ void render_ui(SDL_Renderer *renderer, TTF_Font *font, int interval_mins,
 
 int main(int argc, char *argv[]) {
     romfsInit();
+	fsdevMountSdmc();
+	load_config();
     socketInitializeDefault();
     appletInitialize();
 	
@@ -208,47 +541,63 @@ int main(int argc, char *argv[]) {
     int interval_mins = DEFAULT_INTERVAL_MINS;
     int cat_index     = 0;
 	int pending_fetch = 0;
+	int force_fetch   = 0;
     int ui_visible    = 1;
     Uint32 ui_show_time = SDL_GetTicks();
     Uint32 last_fetch   = SDL_GetTicks() - (interval_mins * 60 * 1000);
     SDL_Texture *current_image = NULL;
 
+    if (is_first_run) {
+        show_splash(renderer, font);
+        write_first_run_false();
+    }
+
     while (1) {
         Uint32 now = SDL_GetTicks();
 
         // Fetch when timer expires
-        if ((now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
-            // Re-check network before fetching
-            nifmInitialize(NifmServiceType_User);
-            rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
-            nifmExit();
+        if (force_fetch || (now - last_fetch) >= (Uint32)(interval_mins * 60 * 1000)) {
+            force_fetch = 0;
+            SDL_Texture *new_image = NULL;
 
-            if (R_SUCCEEDED(rc) && netStatus == NifmInternetConnectionStatus_Connected) {
-                // Show loading overlay
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderClear(renderer);
-                if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
-                if (font) {
-                    SDL_Color white = {255,255,255,255};
-                    SDL_Surface *ls = TTF_RenderUTF8_Blended(font, "Loading...", white);
-                    if (ls) {
-                        SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
-                        SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
-                        SDL_RenderCopy(renderer, lt, NULL, &dst);
-                        SDL_DestroyTexture(lt);
-                        SDL_FreeSurface(ls);
+            if (CATEGORIES[cat_index].url[0] != 0) {
+                // Remote fetch — check network first
+                nifmInitialize(NifmServiceType_User);
+                rc = nifmGetInternetConnectionStatus(NULL, NULL, &netStatus);
+                nifmExit();
+
+                if (R_SUCCEEDED(rc) && netStatus == NifmInternetConnectionStatus_Connected) {
+                    // Show loading overlay
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                    SDL_RenderClear(renderer);
+                    if (current_image) SDL_RenderCopy(renderer, current_image, NULL, NULL);
+                    if (font) {
+                        SDL_Color white = {255,255,255,255};
+                        SDL_Surface *ls = TTF_RenderUTF8_Blended(font, "Loading...", white);
+                        if (ls) {
+                            SDL_Texture *lt = SDL_CreateTextureFromSurface(renderer, ls);
+                            SDL_Rect dst = {(SCREEN_W-ls->w)/2, (SCREEN_H-ls->h)/2, ls->w, ls->h};
+                            SDL_RenderCopy(renderer, lt, NULL, &dst);
+                            SDL_DestroyTexture(lt);
+                            SDL_FreeSurface(ls);
+                        }
                     }
+                    SDL_RenderPresent(renderer);
+                    new_image = fetch_image(renderer,
+                        CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
+                } else {
+                    snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
                 }
-                SDL_RenderPresent(renderer);
 
-                SDL_Texture *new_image = fetch_image(renderer,
-                    CATEGORIES[cat_index].url, fetch_status, sizeof(fetch_status));
-                if (new_image) {
-                    if (current_image) SDL_DestroyTexture(current_image);
-                    current_image = new_image;
-                }
-            } else {
-                snprintf(fetch_status, sizeof(fetch_status), "No internet connection.");
+            } else if (CATEGORIES[cat_index].localpath[0] != 0) {
+                // Local fetch — no network check needed
+                new_image = load_local_image(renderer,
+                    CATEGORIES[cat_index].localpath, fetch_status, sizeof(fetch_status));
+            }
+
+            if (new_image) {
+                if (current_image) SDL_DestroyTexture(current_image);
+                current_image = new_image;
             }
             last_fetch = SDL_GetTicks();
             ui_visible = 1;
@@ -292,7 +641,7 @@ int main(int argc, char *argv[]) {
             ui_visible = 0;
             if (pending_fetch) {
                 pending_fetch = 0;
-                last_fetch = now - (interval_mins * 60 * 1000); // trigger immediate fetch
+                force_fetch = 1;
             }
         }
 
@@ -361,6 +710,7 @@ cleanup:
     appletSetMediaPlaybackState(false);
     appletExit();
     socketExit();
+	fsdevUnmountDevice("sdmc");
     romfsExit();
     return 0;
 }
