@@ -69,11 +69,11 @@ void write_default_config(void) {
 	fprintf(f, "Album = local://sdmc:/Nintendo/Album/\n");
 	fprintf(f, "Video Games = https://gandalfsax.com/images/vg.jpg\n");
 	fprintf(f, "Halloween = https://gandalfsax.com/images/hw.jpg\n");
-    fprintf(f, "Ancient Girls = https://gandalfsax.com/images/ag.jpg\n");
-    fprintf(f, "Gaming Girls = https://gandalfsax.com/images/gg.jpg\n");
-    fprintf(f, "Lofi Time = https://gandalfsax.com/images/lt.jpg\n");
-    fprintf(f, "Waifu & Chill = https://gandalfsax.com/images/wac.jpg\n");
-	fprintf(f, "All Girls = https://gandalfsax.com/images/girls.jpg\n");
+    fprintf(f, ";Ancient Girls = https://gandalfsax.com/images/ag.jpg\n");
+    fprintf(f, ";Gaming Girls = https://gandalfsax.com/images/gg.jpg\n");
+    fprintf(f, ";Lofi Time = https://gandalfsax.com/images/lt.jpg\n");
+    fprintf(f, ";Waifu & Chill = https://gandalfsax.com/images/wac.jpg\n");
+	fprintf(f, ";All Girls = https://gandalfsax.com/images/girls.jpg\n");
     fclose(f);
 }
 
