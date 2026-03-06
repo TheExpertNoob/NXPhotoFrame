@@ -63,12 +63,36 @@ jobs:
 
       - name: Prepare NSP build directories
         run: |
-          mkdir -p nca nsp
-          cp control_nca/*.nca nca/
+          mkdir -p nca nsp control_romfs
+          
+      - name: Generate control romfs
+        run: python3 tools/generate_control.py icon.jpg control_romfs/
+
+      - name: Build Control NCA
+        run: |
+          HACPACK_FLAGS="-k ./keys.dat \
+            -o ./nca/ \
+            --type nca \
+            --keygeneration 21 \
+            --ncatype control \
+            --titleid 0100BAEFAE420000 \
+            --romfsdir ./control_romfs/"
+
+          if [ -f acid_private.pem ]; then
+            HACPACK_FLAGS="$HACPACK_FLAGS --acidsigprivatekey ./acid_private.pem"
+          fi
+          if [ -f ncasig1_private.pem ]; then
+            HACPACK_FLAGS="$HACPACK_FLAGS --ncasig1privatekey ./ncasig1_private.pem"
+          fi
+
+          tools/hacpack $HACPACK_FLAGS
+
+          # Record control NCA name before program NCA is added
+          CONTROL_NCA=$(ls nca/ | grep "\.nca$" | head -1)
+          echo "CONTROL_NCA=$CONTROL_NCA" >> $GITHUB_ENV
 
       - name: Build Program NCA
         run: |
-          # Base flags always present
           HACPACK_FLAGS="-k ./keys.dat \
             -o ./nca/ \
             --type nca \
@@ -82,7 +106,6 @@ jobs:
             --ncasig2privatekey ./ncasig2_private.pem \
             --ncasig2modulus ./ncasig2_modulus.bin"
 
-          # Append optional flags only if keys exist
           if [ -f acid_private.pem ]; then
             HACPACK_FLAGS="$HACPACK_FLAGS --acidsigprivatekey ./acid_private.pem"
           fi
@@ -92,12 +115,11 @@ jobs:
 
           tools/hacpack $HACPACK_FLAGS
 
-          PROGRAM_NCA=$(ls nca/ | grep -v "$(ls control_nca/)" | head -1)
+          PROGRAM_NCA=$(ls nca/ | grep -v "${{ env.CONTROL_NCA }}" | grep "\.nca$" | head -1)
           echo "PROGRAM_NCA=$PROGRAM_NCA" >> $GITHUB_ENV
 
       - name: Build Meta NCA
         run: |
-          CONTROL_NCA=$(ls control_nca/)
           tools/hacpack \
             -k ./keys.dat \
             -o ./nca/ \
@@ -109,7 +131,7 @@ jobs:
             --titleid 0100BAEFAE420000 \
             --requiredsystemversion 21.2.0 \
             --programnca ./nca/${{ env.PROGRAM_NCA }} \
-            --controlnca ./nca/$CONTROL_NCA
+            --controlnca ./nca/${{ env.CONTROL_NCA }}
 
       - name: Build NSP
         run: |
