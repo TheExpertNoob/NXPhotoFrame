@@ -66,7 +66,7 @@ def generate_nacp(output_path):
     write_u64(0x3038, 0x0100BAEFAE420000)
 
     # DisplayVersion @ 0x3060
-    write_str(0x3060, "1.0.0", 0x10)
+    write_str(0x3060, "1.0.2", 0x10)
 
     # AddOnContentBaseId @ 0x3070 (TitleID + 0x1000)
     write_u64(0x3070, 0x0100BAEFAE421000)
@@ -96,8 +96,8 @@ def generate_nacp(output_path):
     write_u8(0x30F6, 1)
 
     # JitConfiguration @ 0x33B0
-    # Flag = 1 (Enabled), MemorySize = 64MB
-    write_u64(0x33B0, 0x0000000000000001)
+    # Flag = 0 (None), MemorySize = 64MB
+    write_u64(0x33B0, 0x0000000000000000)
     write_u64(0x33B8, 0x0000000004000000)
 
     with open(output_path, 'wb') as f:
