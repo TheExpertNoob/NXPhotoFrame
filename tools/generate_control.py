@@ -54,7 +54,7 @@ def generate_nacp(output_path):
     write_u32(0x302C, 0x0000FFFF)
 
     # StartupUserAccount @ 0x3025 = 1 (Required)
-    write_u8(0x3025, 1)
+    write_u8(0x3025, 0)
 
     # Screenshot @ 0x3034 = 0 (Allow)
     write_u8(0x3034, 0)
