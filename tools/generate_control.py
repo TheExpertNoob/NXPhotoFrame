@@ -68,23 +68,23 @@ def generate_nacp(output_path):
     # DisplayVersion @ 0x3060
     write_str(0x3060, "1.0.2", 0x10)
 
-    # AddOnContentBaseId @ 0x3070 (TitleID + 0x1000)
-    write_u64(0x3070, 0x0100BAEFAE421000)
+    # AddOnContentBaseId @ 0x3070 (TitleID + 0x1000) was 0x0100BAEFAE421000
+    write_u64(0x3070, 0)
 
-    # SaveDataOwnerId @ 0x3078
-    write_u64(0x3078, 0x0100BAEFAE420000)
+    # SaveDataOwnerId @ 0x3078 was 0x0100BAEFAE420000
+    write_u64(0x3078, 0)
 
-    # UserAccountSaveDataSize @ 0x3080 — 64MB
-    write_u64(0x3080, 0x4000000)
+    # UserAccountSaveDataSize @ 0x3080 —0MB was 0x4000000 — 64MB
+    write_u64(0x3080, 0)
 
-    # UserAccountSaveDataJournalSize @ 0x3088 — 4MB
-    write_u64(0x3088, 0x400000)
+    # UserAccountSaveDataJournalSize @ 0x3088 — 0MB was 0x400000 - 4MB
+    write_u64(0x3088, 0)
 
-    # UserAccountSaveDataSizeMax @ 0x3148 — 64MB
-    write_u64(0x3148, 0x4000000)
+    # UserAccountSaveDataSizeMax @ 0x3148 — 0MB was 0x4000000 - 64MB
+    write_u64(0x3148, 0)
 
-    # UserAccountSaveDataJournalSizeMax @ 0x3150 — 4MB
-    write_u64(0x3150, 0x400000)
+    # UserAccountSaveDataJournalSizeMax @ 0x3150 — 0MB was 0x400000 - 4MB
+    write_u64(0x3150, 0)
 
     # LogoType @ 0x30F0 = 0 (LicensedByNintendo)
     write_u8(0x30F0, 0)
@@ -96,8 +96,9 @@ def generate_nacp(output_path):
     write_u8(0x30F6, 1)
 
     # JitConfiguration @ 0x33B0
-    # Flag = 0 (None), MemorySize = 64MB
+    # Flag = 0 (None), Flag = 1 (Enabled)
     write_u64(0x33B0, 0x0000000000000000)
+    # MemorySize = 64MB
     write_u64(0x33B8, 0x0000000004000000)
 
     with open(output_path, 'wb') as f:
